@@ -82,6 +82,7 @@ int main(int argc, char *argv[])
   int *pivots, *bucket_cap;
   int *buffer;
   int buffer_size;
+  int BUCKET_TAG = 0, BUCKET_SIZE_TAG = 1;
   char host[20];
   MPI_Status status;
   int N = 10;		// default integer value
@@ -176,11 +177,11 @@ int main(int argc, char *argv[])
     // Send Buckets
     for (int send_index = 1; send_index < nprocs; send_index++) {
       printf("P0 sending bucket count to P%d.\n", send_index);
-      MPI_Send(&bucket_cap[send_index], 1, MPI_INT, send_index, TAG, MPI_COMM_WORLD);
+      MPI_Send(&bucket_cap[send_index], 1, MPI_INT, send_index, BUCKET_SIZE_TAG, MPI_COMM_WORLD);
       printf("P0 awaiting response from P%d.\n", send_index);
-      MPI_Recv(&N, 1, MPI_INT, send_index, TAG, MPI_COMM_WORLD, &status);
+      //MPI_Recv(&N, 1, MPI_INT, send_index, TAG, MPI_COMM_WORLD, &status);
       printf("P0 sending bucket of size %d to P%d.\n", bucket_cap[send_index], send_index);
-      MPI_Send(buckets[send_index], bucket_cap[send_index], MPI_INT, send_index, TAG, MPI_COMM_WORLD);
+      MPI_Send(buckets[send_index], bucket_cap[send_index], MPI_INT, send_index, BUCKET_TAG, MPI_COMM_WORLD);
     }
 
     // Quicksort own business.
@@ -212,11 +213,11 @@ int main(int argc, char *argv[])
   else {
     printf("P%d awaiting bucket size.\n", rank);
     int bucket_size;
-    MPI_Recv(&bucket_size, 1, MPI_INT, 0, TAG, MPI_COMM_WORLD, &status);
+    MPI_Recv(&bucket_size, 1, MPI_INT, 0, BUCKET_SIZE_TAG, MPI_COMM_WORLD, &status);
     printf("P%d received, confirming, and mallocing bucket size.\n", rank);
-    MPI_Send(&N, 1, MPI_INT, 0, TAG, MPI_COMM_WORLD);
+    //MPI_Send(&N, 1, MPI_INT, 0, TAG, MPI_COMM_WORLD);
     int *bucket = (int *)malloc(bucket_size * sizeof(int));
-    MPI_Recv(bucket, bucket_size, MPI_INT, rank-1, TAG, MPI_COMM_WORLD, &status);
+    MPI_Recv(bucket, bucket_size, MPI_INT, rank-1, BUCKET_TAG, MPI_COMM_WORLD, &status);
     printf("P%d received bucket.\n", rank);
     quicksort(bucket, 0, bucket_size - 1);
     printf("P%d completed quicksort.\n", rank);
