@@ -1,12 +1,14 @@
 //------------------------------------------------------------------------- 
-// This is supporting software for CS415/515 Parallel Programming.
-// Copyright (c) Portland State University
+// Copyright (c) 2015 Parker Harris Emerson, using supporting software for
+// CS415/515 Parallel Programming, copyright (c) Portland State University
 //------------------------------------------------------------------------- 
 
-// A simple demo program of MPI send-receive routines.
+// A ring program to explore MPI.
 //
 // - Process 0 sends an integer to process 1.
-// - Process 1 decreases the integer's value by one, and sends it back
+// - Process 1 decreases the integer's value by one, and sends it to the 
+//   next Process in the ring.
+// - The last Process in the ring passes the final number to Process 0.
 //
 // Usage: 
 //   linux> mpirun -hostflie <hostfile> -n <#processes> simple [<N>]
@@ -25,10 +27,10 @@ int main(int argc, char *argv[])
   int nprocs, rank;
   char host[20];
   MPI_Status status;
-  char* file_input = "./datahum";		// default integer value
+  int N = 10;		// default integer value
   
   if (argc == 2) {
-    file_input = atoi(argv[1]);	// overwirte the value
+    N = atoi(argv[1]);	// overwirte the value
   }
   gethostname(host, 20);
 
@@ -42,20 +44,26 @@ int main(int argc, char *argv[])
   }
   printf("P%d/%d started on %s ...\n", rank, nprocs, host);
 
+  //for (int index = 0; index < nprocs; index++ ) {
   if (rank == 0) {
     MPI_Send(&N, 1, MPI_INT, 1, TAG, MPI_COMM_WORLD);
     printf("P0 sent %d to P1\n", N);
     MPI_Recv(&N, 1, MPI_INT, MPI_ANY_SOURCE, TAG, MPI_COMM_WORLD, &status);
-    printf("P0 recieved %d\n", N);
-  } 
-  else if (rank == 1) {
+    printf("P0 received %d\n", N);
+  }
+  else if (rank == (nprocs - 1)) {
     MPI_Recv(&N, 1, MPI_INT, rank-1, TAG, MPI_COMM_WORLD, &status);
-    printf("P1 recieved %d\n", N);
+    printf("P%d received %d\n", rank, N);
     N--;
     MPI_Send(&N, 1, MPI_INT, 0, TAG, MPI_COMM_WORLD);
-    printf("P1 sent %d to P0\n", N);
-  } else {
-    // if there are more than 2 processes, others don't do anything
+    printf("P%d sent %d to P0\n", rank, N);
+  }
+  else {
+    MPI_Recv(&N, 1, MPI_INT, rank-1, TAG, MPI_COMM_WORLD, &status);
+    printf("P%d received %d\n", rank, N);
+    N--;
+    MPI_Send(&N, 1, MPI_INT, rank+1, TAG, MPI_COMM_WORLD);
+    printf("P%d sent %d to P0\n", rank, N);
   }
 
   MPI_Finalize();
