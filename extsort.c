@@ -81,7 +81,7 @@ int main(int argc, char *argv[])
   int nprocs, rank;
   int *pivots, *bucket_cap;
   int *buffer;
-  int buffer_size, offset;
+  int buffer_size;
   char host[20];
   MPI_Status status;
   int N = 10;		// default integer value
@@ -91,7 +91,7 @@ int main(int argc, char *argv[])
   MPI_File fh_input;
   MPI_File fh_output;
   MPI_Status file_status;
-  MPI_Offset file_size;
+  MPI_Offset file_size, offset;
   
   if (argc == 2) {
     file_input = argv[1];	// overwrite the value
@@ -112,7 +112,7 @@ int main(int argc, char *argv[])
   //for (int index = 0; index < nprocs; index++ ) {
   if (rank == 0) {
     // Open and read file.
-    printf("Opening file: '%s\n'", file_input);
+    printf("Opening file: %s\n", file_input);
     MPI_File_open(MPI_COMM_SELF, file_input, MPI_MODE_RDONLY,
                   MPI_INFO_NULL, &fh_input);
 
@@ -184,10 +184,13 @@ int main(int argc, char *argv[])
     }
 
     // Quicksort own business.
-    quicksort(buffer, 0, bucket_cap[0] - 1);
+    quicksort(buckets[0], 0, bucket_cap[0] - 1);
     printf("P%d completed quicksort.\n", rank);
     
 
+    for (int i = 0; i < bucket_cap[0]; i++) {
+      printf("P %d sorted: %d\n", rank, buckets[0][i]);
+    }
     // Write file
     //printf("Writing file.\n");
     //MPI_File_seek(fh_input, 0, MPI_SEEK_SET); 
@@ -195,10 +198,10 @@ int main(int argc, char *argv[])
 
     // Write
     printf("P%d opening and writing file.\n", rank);
-    MPI_File_open(MPI_COMM_WORLD, file_output, MPI_MODE_CREATE|MPI_MODE_WRONLY, MPI_INFO_NULL, &fh_output);
-    int offset = 0;
-    MPI_File_set_view(fh_output, offset, MPI_INT, MPI_INT, "native", MPI_INFO_NULL);
-    MPI_File_write(fh_output, buffer, bucket_cap[0] - 1, MPI_INT, &status);
+    MPI_File_open(MPI_COMM_SELF, file_output, MPI_MODE_CREATE|MPI_MODE_WRONLY, MPI_INFO_NULL, &fh_output);
+    //offset = (file_size - bucket_cap[0]) * sizeof(int);
+    //MPI_File_set_view(fh_output, offset, MPI_INT, MPI_INT, "native", MPI_INFO_NULL);
+    MPI_File_write(fh_output, buckets[0], bucket_cap[0], MPI_INT, &status);
     //MPI_Send(&N, 1, MPI_INT, 1, TAG, MPI_COMM_WORLD);
     //printf("P0 sent %d to P1\n", N);
     //MPI_Recv(&N, 1, MPI_INT, MPI_ANY_SOURCE, TAG, MPI_COMM_WORLD, &status);
@@ -219,17 +222,19 @@ int main(int argc, char *argv[])
     printf("P%d completed quicksort.\n", rank);
 
     for (int i = 0; i < bucket_size; i++) {
-      printf("Sorted: %d\n", bucket[i]);
+      printf("P %d sorted: %d\n", rank, bucket[i]);
     }
 
     // Write
     printf("P%d opening and writing file.\n", rank);
     printf("P%d's bucket[0] == %d.\n", rank, bucket[0]);
-    MPI_File_open(MPI_COMM_WORLD, file_output, MPI_MODE_CREATE|MPI_MODE_WRONLY, MPI_INFO_NULL, &fh_output);
-    offset = (bucket[0] * 4) - 4;
-    printf("P%d offset = %d.\n", rank, offset);
-    MPI_File_set_view(fh_output, offset, MPI_INT, MPI_INT, "native", MPI_INFO_NULL);
-    printf("P%d view set. Writing....\n", rank);
+    MPI_File_open(MPI_COMM_SELF, file_output, MPI_MODE_CREATE|MPI_MODE_WRONLY, MPI_INFO_NULL, &fh_output);
+    //offset = (bucket[0] * 4) - 4;
+    //offset = (file_size - bucket_cap[rank]) * sizeof(int);
+    //printf("P%d offset = %d.\n", rank, offset);
+    //MPI_File_set_view(fh_output, offset, MPI_INT, MPI_INT, "native", MPI_INFO_NULL);
+    //printf("P%d view set. Writing....\n", rank);
+    MPI_File_seek(fh_output, 0, MPI_SEEK_END);
     MPI_File_write(fh_output, bucket, bucket_size, MPI_INT, &status);
     MPI_File_close(&fh_output);
     printf("File closed in P%d.\n", rank);
