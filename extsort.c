@@ -77,6 +77,7 @@ void quicksort(int *array, int low, int high) {
 //
 int main(int argc, char *argv[])
 {
+  double start_time = MPI_Wtime();
   int index;
   int nprocs, rank;
   int *pivots, *bucket_cap;
@@ -140,18 +141,6 @@ int main(int argc, char *argv[])
     }
     int bucket_index;
 
-    /*
-    for (int pivot_index = 0; pivot_index < nprocs - 1; pivot_index++) {
-      bucket_index = 0;
-      for (int buffer_index = 0; buffer_index < buffer_size; buffer_index++) {
-        if ((buffer[buffer_index] < pivots[pivot_index]) && ((pivot_index == 0) || (buffer[buffer_index] >= pivots[pivot_index - 1]))) {
-          buckets[pivot_index][bucket_index++] = buffer[buffer_index];
-        }
-      }
-      bucket_cap[pivot_index] = bucket_index;
-    }
-
-    */
     for (index = 0; index < nprocs; index++) {
       bucket_cap[index] = 0;
     }
@@ -179,7 +168,6 @@ int main(int argc, char *argv[])
       printf("P0 sending bucket count to P%d.\n", send_index);
       MPI_Send(&bucket_cap[send_index], 1, MPI_INT, send_index, BUCKET_SIZE_TAG, MPI_COMM_WORLD);
       printf("P0 awaiting response from P%d.\n", send_index);
-      //MPI_Recv(&N, 1, MPI_INT, send_index, TAG, MPI_COMM_WORLD, &status);
       printf("P0 sending bucket of size %d to P%d.\n", bucket_cap[send_index], send_index);
       MPI_Send(buckets[send_index], bucket_cap[send_index], MPI_INT, send_index, BUCKET_TAG, MPI_COMM_WORLD);
     }
@@ -189,21 +177,10 @@ int main(int argc, char *argv[])
     printf("P%d completed quicksort.\n", rank);
     
 
-    // Write file
-    //printf("Writing file.\n");
-    //MPI_File_seek(fh_input, 0, MPI_SEEK_SET); 
-    //MPI_File_write(fh_input, buffer, buffer_size, MPI_INTEGER, &file_status);
-
     // Write
     printf("P%d opening and writing file.\n", rank);
     MPI_File_open(MPI_COMM_SELF, file_output, MPI_MODE_CREATE|MPI_MODE_WRONLY, MPI_INFO_NULL, &fh_output);
-    //offset = (file_size - bucket_cap[0]) * sizeof(int);
-    //MPI_File_set_view(fh_output, offset, MPI_INT, MPI_INT, "native", MPI_INFO_NULL);
     MPI_File_write(fh_output, buckets[0], bucket_cap[0], MPI_INT, &status);
-    //MPI_Send(&N, 1, MPI_INT, 1, TAG, MPI_COMM_WORLD);
-    //printf("P0 sent %d to P1\n", N);
-    //MPI_Recv(&N, 1, MPI_INT, MPI_ANY_SOURCE, TAG, MPI_COMM_WORLD, &status);
-    //printf("P0 received %d\n", N);
     MPI_File_close(&fh_output);
     printf("File closed in P%d.\n", rank);
     MPI_Send(&N, 1, MPI_INT, 1, WRITE_QUEUE_TAG, MPI_COMM_WORLD);
@@ -225,20 +202,19 @@ int main(int argc, char *argv[])
     MPI_Recv(&N, 1, MPI_INT, rank - 1, WRITE_QUEUE_TAG, MPI_COMM_WORLD, &status);
     printf("P%d opening and writing file.\n", rank);
     MPI_File_open(MPI_COMM_SELF, file_output, MPI_MODE_CREATE|MPI_MODE_WRONLY, MPI_INFO_NULL, &fh_output);
-    //offset = (bucket[0] * 4) - 4;
-    //offset = (file_size - bucket_cap[rank]) * sizeof(int);
-    //printf("P%d offset = %d.\n", rank, offset);
-    //MPI_File_set_view(fh_output, offset, MPI_INT, MPI_INT, "native", MPI_INFO_NULL);
-    //printf("P%d view set. Writing....\n", rank);
     MPI_File_seek(fh_output, 0, MPI_SEEK_END);
     MPI_File_write(fh_output, bucket, bucket_size, MPI_INT, &status);
     MPI_File_close(&fh_output);
+    printf("File closed in P%d.\n", rank);
     if (rank < nprocs - 1) {
       MPI_Send(&N, 1, MPI_INT, rank + 1, WRITE_QUEUE_TAG, MPI_COMM_WORLD);
+    } else { // Last process in loop.
+      double end_time = MPI_Wtime();
+      printf("Start time: %f\n", start_time);
+      printf("End time: %f\n", end_time);
+      printf("Total time: %f\n", end_time - start_time);
     }
-    printf("File closed in P%d.\n", rank);
   }
-
 
 
   MPI_Finalize();
