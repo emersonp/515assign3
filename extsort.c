@@ -77,15 +77,19 @@ void quicksort(int *array, int low, int high) {
 //
 int main(int argc, char *argv[])
 {
+  int index;
   int nprocs, rank;
+  int *pivots, *bucket_cap;
   int *buffer;
-  int buffer_size;
+  int buffer_size, offset;
   char host[20];
   MPI_Status status;
   int N = 10;		// default integer value
   char* file_input = "./sorting_array";
+  char* file_output = "./output_array";
   
-  MPI_File file_handle;
+  MPI_File fh_input;
+  MPI_File fh_output;
   MPI_Status file_status;
   MPI_Offset file_size;
   
@@ -107,48 +111,131 @@ int main(int argc, char *argv[])
 
   //for (int index = 0; index < nprocs; index++ ) {
   if (rank == 0) {
+    // Open and read file.
     printf("Opening file: '%s\n'", file_input);
-    MPI_File_open(MPI_COMM_SELF, file_input, MPI_MODE_RDWR,
-                  MPI_INFO_NULL, &file_handle);
+    MPI_File_open(MPI_COMM_SELF, file_input, MPI_MODE_RDONLY,
+                  MPI_INFO_NULL, &fh_input);
 
-    MPI_File_get_size(file_handle, &file_size);
+    MPI_File_get_size(fh_input, &file_size);
     printf("File size: %d\n", file_size);
 
     buffer_size = file_size / sizeof(int);
     buffer = (int *) malloc(buffer_size * sizeof(int));
     printf("Reading file.\n");
-    MPI_File_read(file_handle, buffer, buffer_size, MPI_INTEGER, &file_status);
+    MPI_File_read(fh_input, buffer, buffer_size, MPI_INTEGER, &file_status);
+    MPI_File_close(&fh_input);
     
-    printf("Sorting file.\n");
-    quicksort(buffer, 0, buffer_size - 1);
-    for (int i = 0; i < buffer_size; i++) {
-      printf("Num: %d\n", buffer[i]);
+    // Establish buckets.
+    printf("Sorting beginning of file.\n");
+    quicksort(buffer, 0, nprocs * 10 - 1);
+    pivots = (int *) malloc((nprocs - 1) * sizeof(int));
+    bucket_cap = (int *) malloc(nprocs * sizeof(int));
+    for (index = 0; index < nprocs - 1; index++) {
+      pivots[index] = buffer[(index + 1) * 10];
+    }
+    int *buckets[nprocs];
+    for (index = 0; index < nprocs; index++) {
+      buckets[index] = (int *) malloc(buffer_size * sizeof(int));
+    }
+    int bucket_index;
+
+    /*
+    for (int pivot_index = 0; pivot_index < nprocs - 1; pivot_index++) {
+      bucket_index = 0;
+      for (int buffer_index = 0; buffer_index < buffer_size; buffer_index++) {
+        if ((buffer[buffer_index] < pivots[pivot_index]) && ((pivot_index == 0) || (buffer[buffer_index] >= pivots[pivot_index - 1]))) {
+          buckets[pivot_index][bucket_index++] = buffer[buffer_index];
+        }
+      }
+      bucket_cap[pivot_index] = bucket_index;
     }
 
-    printf("Writing file.\n");
-    MPI_File_seek(file_handle, 0, MPI_SEEK_SET); 
-    MPI_File_write(file_handle, buffer, buffer_size, MPI_INTEGER, &file_status);
+    */
+    for (index = 0; index < nprocs; index++) {
+      bucket_cap[index] = 0;
+    }
+    for (int buffer_index = 0; buffer_index < buffer_size; buffer_index++) {
+      for (int pivot_index = 0; pivot_index < nprocs; pivot_index++) {
+        if (pivot_index < nprocs - 1) {
+          if (buffer[buffer_index] < pivots[pivot_index]) {
+            buckets[pivot_index][bucket_cap[pivot_index]++] = buffer[buffer_index];
+            break;
+          }
+        } else {
+          if (buffer[buffer_index] < pivots[nprocs - 1]) {
+            buckets[nprocs - 1][bucket_cap[nprocs - 1]++] = buffer[buffer_index];
+          }
+        }
+      }
+    }
 
-    MPI_Send(&N, 1, MPI_INT, 1, TAG, MPI_COMM_WORLD);
-    printf("P0 sent %d to P1\n", N);
-    MPI_Recv(&N, 1, MPI_INT, MPI_ANY_SOURCE, TAG, MPI_COMM_WORLD, &status);
-    printf("P0 received %d\n", N);
-    MPI_File_close(&file_handle);
-  }
-  else if (rank == (nprocs - 1)) {
-    MPI_Recv(&N, 1, MPI_INT, rank-1, TAG, MPI_COMM_WORLD, &status);
-    printf("P%d received %d\n", rank, N);
-    N--;
-    MPI_Send(&N, 1, MPI_INT, 0, TAG, MPI_COMM_WORLD);
-    printf("P%d sent %d to P0\n", rank, N);
+    for (int i = 0; i < nprocs; i++) {
+      printf("Bucket Cap: %d\n", bucket_cap[i]);
+    }
+
+    // Send Buckets
+    for (int send_index = 1; send_index < nprocs; send_index++) {
+      printf("P0 sending bucket count to P%d.\n", send_index);
+      MPI_Send(&bucket_cap[send_index], 1, MPI_INT, send_index, TAG, MPI_COMM_WORLD);
+      printf("P0 awaiting response from P%d.\n", send_index);
+      MPI_Recv(&N, 1, MPI_INT, send_index, TAG, MPI_COMM_WORLD, &status);
+      printf("P0 sending bucket of size %d to P%d.\n", bucket_cap[send_index], send_index);
+      MPI_Send(buckets[send_index], bucket_cap[send_index], MPI_INT, send_index, TAG, MPI_COMM_WORLD);
+    }
+
+    // Quicksort own business.
+    quicksort(buffer, 0, bucket_cap[0] - 1);
+    printf("P%d completed quicksort.\n", rank);
+    
+
+    // Write file
+    //printf("Writing file.\n");
+    //MPI_File_seek(fh_input, 0, MPI_SEEK_SET); 
+    //MPI_File_write(fh_input, buffer, buffer_size, MPI_INTEGER, &file_status);
+
+    // Write
+    printf("P%d opening and writing file.\n", rank);
+    MPI_File_open(MPI_COMM_WORLD, file_output, MPI_MODE_CREATE|MPI_MODE_WRONLY, MPI_INFO_NULL, &fh_output);
+    int offset = 0;
+    MPI_File_set_view(fh_output, offset, MPI_INT, MPI_INT, "native", MPI_INFO_NULL);
+    MPI_File_write(fh_output, buffer, bucket_cap[0] - 1, MPI_INT, &status);
+    //MPI_Send(&N, 1, MPI_INT, 1, TAG, MPI_COMM_WORLD);
+    //printf("P0 sent %d to P1\n", N);
+    //MPI_Recv(&N, 1, MPI_INT, MPI_ANY_SOURCE, TAG, MPI_COMM_WORLD, &status);
+    //printf("P0 received %d\n", N);
+    MPI_File_close(&fh_output);
+    printf("File closed in P%d.\n", rank);
   }
   else {
-    MPI_Recv(&N, 1, MPI_INT, rank-1, TAG, MPI_COMM_WORLD, &status);
-    printf("P%d received %d\n", rank, N);
-    N--;
-    MPI_Send(&N, 1, MPI_INT, rank+1, TAG, MPI_COMM_WORLD);
-    printf("P%d sent %d to P0\n", rank, N);
+    printf("P%d awaiting bucket size.\n", rank);
+    int bucket_size;
+    MPI_Recv(&bucket_size, 1, MPI_INT, 0, TAG, MPI_COMM_WORLD, &status);
+    printf("P%d received, confirming, and mallocing bucket size.\n", rank);
+    MPI_Send(&N, 1, MPI_INT, 0, TAG, MPI_COMM_WORLD);
+    int *bucket = (int *)malloc(bucket_size * sizeof(int));
+    MPI_Recv(bucket, bucket_size, MPI_INT, rank-1, TAG, MPI_COMM_WORLD, &status);
+    printf("P%d received bucket.\n", rank);
+    quicksort(bucket, 0, bucket_size - 1);
+    printf("P%d completed quicksort.\n", rank);
+
+    for (int i = 0; i < bucket_size; i++) {
+      printf("Sorted: %d\n", bucket[i]);
+    }
+
+    // Write
+    printf("P%d opening and writing file.\n", rank);
+    printf("P%d's bucket[0] == %d.\n", rank, bucket[0]);
+    MPI_File_open(MPI_COMM_WORLD, file_output, MPI_MODE_CREATE|MPI_MODE_WRONLY, MPI_INFO_NULL, &fh_output);
+    offset = (bucket[0] * 4) - 4;
+    printf("P%d offset = %d.\n", rank, offset);
+    MPI_File_set_view(fh_output, offset, MPI_INT, MPI_INT, "native", MPI_INFO_NULL);
+    printf("P%d view set. Writing....\n", rank);
+    MPI_File_write(fh_output, bucket, bucket_size, MPI_INT, &status);
+    MPI_File_close(&fh_output);
+    printf("File closed in P%d.\n", rank);
   }
+
+
 
   MPI_Finalize();
 }
