@@ -78,16 +78,21 @@ void quicksort(int *array, int low, int high) {
 int main(int argc, char *argv[])
 {
   int nprocs, rank;
+  int *buffer;
+  int buffer_size;
   char host[20];
   MPI_Status status;
   int N = 10;		// default integer value
-  char* file_input = "./datahum";
+  char* file_input = "./sorting_array";
+  
   MPI_File file_handle;
   MPI_Status file_status;
+  MPI_Offset file_size;
   
   if (argc == 2) {
     file_input = argv[1];	// overwrite the value
   }
+
   gethostname(host, 20);
 
   MPI_Init(&argc, &argv);
@@ -103,8 +108,27 @@ int main(int argc, char *argv[])
   //for (int index = 0; index < nprocs; index++ ) {
   if (rank == 0) {
     printf("Opening file: '%s\n'", file_input);
-    MPI_File_open(MPI_COMM_SELF, file_input, MPI_MODE_RDONLY,
+    MPI_File_open(MPI_COMM_SELF, file_input, MPI_MODE_RDWR,
                   MPI_INFO_NULL, &file_handle);
+
+    MPI_File_get_size(file_handle, &file_size);
+    printf("File size: %d\n", file_size);
+
+    buffer_size = file_size / sizeof(int);
+    buffer = (int *) malloc(buffer_size * sizeof(int));
+    printf("Reading file.\n");
+    MPI_File_read(file_handle, buffer, buffer_size, MPI_INTEGER, &file_status);
+    
+    printf("Sorting file.\n");
+    quicksort(buffer, 0, buffer_size - 1);
+    for (int i = 0; i < buffer_size; i++) {
+      printf("Num: %d\n", buffer[i]);
+    }
+
+    printf("Writing file.\n");
+    MPI_File_seek(file_handle, 0, MPI_SEEK_SET); 
+    MPI_File_write(file_handle, buffer, buffer_size, MPI_INTEGER, &file_status);
+
     MPI_Send(&N, 1, MPI_INT, 1, TAG, MPI_COMM_WORLD);
     printf("P0 sent %d to P1\n", N);
     MPI_Recv(&N, 1, MPI_INT, MPI_ANY_SOURCE, TAG, MPI_COMM_WORLD, &status);
