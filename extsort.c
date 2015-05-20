@@ -86,7 +86,7 @@ int main(int argc, char *argv[])
   int BUCKET_TAG = 0, BUCKET_SIZE_TAG = 1, WRITE_QUEUE_TAG = 2;
   char host[20];
   MPI_Status status;
-  int N = 10;		// default integer value
+  int N = 10;		// N is retained as a number for ring passing for file write.
   char* file_input = "./input_array";
   char* file_output = "./output_array";
   
@@ -94,9 +94,12 @@ int main(int argc, char *argv[])
   MPI_File fh_output;
   MPI_Status file_status;
   MPI_Offset file_size, offset;
-  
-  if (argc == 2) {
-    file_input = argv[1];	// overwrite the value
+ 
+  if (argc > 1) {
+    file_input = argv[1];	// overwrite the default value
+  }
+  if (argc > 2) {
+    file_output = argv[2]; // overwrite the default value
   }
 
   gethostname(host, 20);
